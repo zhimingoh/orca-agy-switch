@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 20px 16px; font: 13px/1.6 system-ui, sans-serif; color: var(--orca-foreground, #e5e7eb); background: var(--orca-background, #17191d); }
+  h1 { margin: 0 0 4px; font-size: 19px; font-weight: 650; }
+  .muted { opacity: .65; font-size: 12px; }
+  .status { margin: 20px 0; padding: 13px; border: 1px solid #7774; border-radius: 10px; }
+  .status strong { display: block; margin-top: 3px; font-size: 16px; }
+  label { display: block; margin: 15px 0 5px; font-weight: 550; }
+  input { width: 100%; border: 1px solid #7775; border-radius: 7px; padding: 10px; background: #7771; color: inherit; font: inherit; outline: none; }
+  input:focus { border-color: #639cf5; box-shadow: 0 0 0 2px #639cf520; }
+  .row { display: flex; gap: 8px; margin-top: 12px; }
+  button { flex: 1; padding: 10px 8px; border: 1px solid #7775; border-radius: 7px; background: #7771; color: inherit; cursor: pointer; font: inherit; font-weight: 550; }
+  button:hover { background: #7773; }
+  button.primary { background: #3978d4; color: white; border-color: #3978d4; }
+  button:disabled { opacity: .45; cursor: wait; }
+  hr { margin: 22px 0; border: 0; border-top: 1px solid #7774; }
+  #message { margin: 16px 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; min-height: 20px; }
+  #message[data-error="true"] { color: #f28a8a; }
+  .note { border-left: 2px solid #7776; padding-left: 10px; margin-top: 18px; }
+</style>
+</head>
+<body>
+<h1>Antigravity 连接</h1>
+<div class="muted">配置 Orca 新开的 AGY 会话</div>
+<div class="status"><span class="muted">当前启动模式</span><strong id="mode">正在读取…</strong></div>
+<form id="settings" autocomplete="off">
+  <label for="url">中转 URL</label>
+  <input id="url" type="url" required placeholder="https://example.com/antigravity" spellcheck="false">
+  <label for="key">API Key</label>
+  <input id="key" type="password" autocomplete="new-password" placeholder="输入中转站 Key" spellcheck="false">
+  <div class="muted" id="key-state">Key 使用系统密钥服务加密保存</div>
+  <label for="model">模型显示名</label>
+  <input id="model" required placeholder="Gemini 4 Argon (Medium)" spellcheck="false">
+  <div class="row"><button type="submit">保存设置</button><button id="test" type="button">测试已保存的连接</button></div>
+</form>
+<hr>
+<div class="row"><button id="relay" class="primary">使用中转站</button><button id="official">使用官方账号</button></div>
+<button id="refresh" style="width:100%;margin-top:8px">刷新当前模式</button>
+<div id="message" role="status" aria-live="polite"></div>
+<div class="note muted">切换后，关闭原来的 AGY 会话，再在 Orca 中新开 Antigravity。官方模式继续使用 Cockpit Tools 选择的本机账号。</div>
+<p class="muted">插件不依赖 CC Switch。保存不会自动切换；连接测试会发送一次最小模型请求。启用中转后，Key 也会进入 Orca 的启动环境配置。</p>
+<script>
+  const $ = id => document.getElementById(id);
+  const controls = [...document.querySelectorAll('button, input')];
+  const request = async (name, input) => (await orca.host.call('plugin.request', {name, input, timeoutMs: 65000})).output;
+  let busy = false;
+  function render(s) {
+    $('mode').textContent = s.modeLabel;
+    $('url').value = s.url;
+    $('model').value = s.model;
+    $('key').value = '';
+    $('key').placeholder = s.hasKey ? '已保存，留空保留原 Key' : '输入中转站 Key';
+    $('key-state').textContent = s.hasKey ? 'Key 已加密保存，不会回显；留空保留原值' : 'Key 使用系统密钥服务加密保存';
+  }
+  async function action(work) {
+    busy = true;
+    controls.forEach(el => el.disabled = true);
+    $('message').dataset.error = 'false';
+    $('message').textContent = '正在处理…';
+    try { await work(); }
+    catch (error) { $('message').dataset.error = 'true'; $('message').textContent = error.message; }
+    finally { busy = false; controls.forEach(el => el.disabled = false); }
+  }
+  $('settings').onsubmit = event => {
+    event.preventDefault();
+    void action(async () => {
+      const s = await request('connection.save', {url: $('url').value, key: $('key').value, model: $('model').value});
+      render(s); $('message').textContent = '设置已保存。点击“使用中转站”应用到 Orca。';
+    });
+  };
+  for (const mode of ['relay', 'official']) $(mode).onclick = () => void action(async () => {
+    render(await request('connection.switch', {mode}));
+    $('message').textContent = '切换成功。请重新打开 Antigravity 会话。';
+  });
+  $('test').onclick = () => void action(async () => {
+    $('message').textContent = '正在测试已保存的 Key、URL 和模型，最多约 50 秒…';
+    $('message').textContent = (await request('connection.test')).message;
+  });
+  $('refresh').onclick = () => void action(async () => { render(await request('connection.state')); $('message').textContent = '当前模式已刷新。'; });
+  setInterval(async () => {
+    if (busy || document.hidden) return;
+    try {
+      const state = await request('connection.state');
+      $('mode').textContent = state.modeLabel;
+      $('key').placeholder = state.hasKey ? '已保存，留空保留原 Key' : '输入中转站 Key';
+      $('key-state').textContent = state.hasKey ? 'Key 已加密保存，不会回显；留空保留原值' : 'Key 使用系统密钥服务加密保存';
+    } catch {}
+  }, 15000);
+  void action(async () => { render(await request('connection.state')); $('message').textContent = ''; });
+</script>
+</body>
+</html>

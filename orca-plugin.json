@@ -1,0 +1,17 @@
+{
+  "manifestVersion": 2,
+  "id": "agy-switch",
+  "name": "Antigravity 连接切换",
+  "version": "1.0.0",
+  "description": "直接设置中转 Key、URL 和模型，在中转站与本机官方账号之间切换。",
+  "repository": "https://github.com/zhimingoh/orca-agy-switch",
+  "engines": { "orca": ">=1.4.248" },
+  "execution": "trusted-worker",
+  "pluginApi": 1,
+  "main": "worker.mjs",
+  "capabilities": [{ "kind": "storage:own" }, { "kind": "secrets:own" }],
+  "contributes": {
+    "panels": [{ "id": "connection", "title": "AGY 连接", "icon": "plug", "entry": "panel.html" }],
+    "statusBarItems": [{ "id": "mode", "text": "AGY", "icon": "plug", "tooltip": "Antigravity 启动连接方式" }]
+  }
+}
